@@ -27,6 +27,20 @@ jobs:
           "$HOME/vcpkg/bootstrap-vcpkg.sh"
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
 
+      - name: Install Vulkan SDK (static MoltenVK for the link step)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          install_runtime: true
+          cache: true
+
+      - name: Verify MoltenVK static lib location
+        run: |
+          echo "VULKAN_SDK = $VULKAN_SDK"
+          echo "=== preset wants: \$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a ==="
+          ls -la "$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/" || true
+          echo "=== searching SDK for any ios libMoltenVK.a ==="
+          find "$VULKAN_SDK" -name libMoltenVK.a 2>/dev/null || true
+
       - name: Fetch pinned MoltenVK framework
         run: ./scripts/build/ios/fetch-moltenvk.sh
 
@@ -48,8 +62,8 @@ jobs:
       - name: Link-path audit
         run: |
           echo "=== candidate binaries ==="
-          find build -type f \( -name z_generals -o -name GeneralsZH \) -print
-          BIN="$(find build -type f -name z_generals | head -1)"
+          find build -type f \( -name z_generals -o -name GeneralsXZH -o -name GeneralsZH \) -print
+          BIN="$(find build -type f \( -name z_generals -o -name GeneralsXZH \) | head -1)"
           echo "=== otool -L $BIN ==="
           otool -L "$BIN" || true
           echo "=== .app trees found ==="
@@ -62,6 +76,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/**/*.app
-            build/ios-vulkan/**/z_generals
+            build/**/z_generals
+            build/**/GeneralsXZH
             build/**/*.dylib
             build/**/MoltenVK.framework/**
