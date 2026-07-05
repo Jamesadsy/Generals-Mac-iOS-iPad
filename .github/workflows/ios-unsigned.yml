@@ -15,8 +15,8 @@ jobs:
         with:
           submodules: false
 
-      - name: Init the DXVK submodule
-        run: git submodule update --init references/fbraz3-dxvk
+      - name: Init the DXVK submodule (recursive for its Vulkan-Headers)
+        run: git submodule update --init --recursive references/fbraz3-dxvk
 
       - name: Toolchain
         run: brew install cmake ninja meson pkgconf
@@ -36,9 +36,7 @@ jobs:
       - name: Verify MoltenVK static lib location
         run: |
           echo "VULKAN_SDK = $VULKAN_SDK"
-          echo "=== preset wants: \$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/libMoltenVK.a ==="
           ls -la "$VULKAN_SDK/lib/MoltenVK.xcframework/ios-arm64/" || true
-          echo "=== searching SDK for any ios libMoltenVK.a ==="
           find "$VULKAN_SDK" -name libMoltenVK.a 2>/dev/null || true
 
       - name: Fetch pinned MoltenVK framework
@@ -61,12 +59,9 @@ jobs:
 
       - name: Link-path audit
         run: |
-          echo "=== candidate binaries ==="
           find build -type f \( -name z_generals -o -name GeneralsXZH -o -name GeneralsZH \) -print
           BIN="$(find build -type f \( -name z_generals -o -name GeneralsXZH \) | head -1)"
-          echo "=== otool -L $BIN ==="
           otool -L "$BIN" || true
-          echo "=== .app trees found ==="
           find build -name "*.app" -maxdepth 4 -print
 
       - name: Upload artefacts
