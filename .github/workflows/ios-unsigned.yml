@@ -1,102 +1,37 @@
----------------------------------------------------------------------------
-ios-unsigned.yml  —  builds the Generals ZH iOS engine on a free macOS runner
+name: ios-unsigned
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios-unsigned.yml'
 
-HOW TO USE:
-1. Fork ammaarreshi/Generals-Mac-iOS-iPad to your own GitHub account.
-2. Add this file at:  .github/workflows/ios-unsigned.yml
-3. GitHub -> your fork -> Actions tab -> "ios-unsigned" -> Run workflow.
-4. When it finishes, download the "generalszh-ios-unsigned" artefact.
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          submodules: false
 
-AUDIT BEFORE TRUSTING (your inspect-before-run rule applies to me too):
-- The two "UNKNOWN" comments below are the only places this might need a
-tweak. Read scripts/build/ios/package-ios-zh.sh in the repo first and
-adjust those two steps to match what the script actually expects.
-- Public forks get unlimited free macOS minutes. Private forks are metered.
----------------------------------------------------------------------------
-name: ios-unsigned 
-on: 
-workflow_dispatch:        # lets you re-run manually from the Actions tab 
-push:                     # AND auto-runs when you commit this file (phone-friendly) 
-paths: 
-- '.github/workflows/ios-unsigned.yml'
+      - name: Init the DXVK submodule
+        run: git submodule update --init references/fbraz3-dxvk
 
-jobs: 
-build: 
-runs-on: macos-15       # Apple Silicon runner. Bump to the newest arm64 image if available. 
-timeout-minutes: 90 
-steps: 
-- name: Checkout fork 
-uses: actions/checkout@v4 
-with: 
-submodules: false            # we init only the one we need, below
+      - name: Toolchain
+        run: brew install cmake ninja meson pkgconf
 
-  - name: Init the DXVK submodule (iOS d3d8/d3d9 are built from this)
-    run: git submodule update --init references/fbraz3-dxvk
+      - name: vcpkg full clone
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
 
-  - name: Toolchain
-    run: brew install cmake ninja meson pkgconf
+      - name: Fetch pinned MoltenVK framework
+        run: ./scripts/build/ios/fetch-moltenvk.sh
 
-  - name: vcpkg (FULL clone — README warns a shallow clone breaks baselines)
-    run: |
-      git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg"
-      "$HOME/vcpkg/bootstrap-vcpkg.sh"
-      echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
+      - name: Stage fonts
+        run: ./scripts/build/ios/stage-fonts.sh
 
-  # --- UNKNOWN 1 -----------------------------------------------------------
-  # The macOS quick-start wants the LunarG Vulkan SDK. The ios-vulkan preset
-  # may be satisfied by the fetched MoltenVK + vcpkg's vulkan-headers alone.
-  # If the `cmake --preset ios-vulkan` step below fails complaining about
-  # VULKAN_SDK, uncomment and adapt an install step here.
-  # -------------------------------------------------------------------------
-
-  - name: Fetch pinned MoltenVK.framework
-    run: ./scripts/build/ios/fetch-moltenvk.sh
-
-  - name: Stage fonts
-    run: ./scripts/build/ios/stage-fonts.sh
-
-  - name: Configure
-    run: cmake --preset ios-vulkan
-
-  - name: Build the engine
-    run: cmake --build build/ios-vulkan --target z_generals
-
-  # --- UNKNOWN 2 -----------------------------------------------------------
-  # package-ios-zh.sh normally assembles + codesigns + installs. We want it
-  # to assemble ONLY (no signing, no assets — assets are merged on YOUR PC,
-  # never on a public runner). --dev skips the ~2.7 GB asset copy.
-  # If the script hard-requires GX_TEAM_ID even in --dev mode, either:
-  #   (a) pass a dummy GX_TEAM_ID and let the codesign step fail *after*
-  #       the .app is assembled (the assembled .app is still uploaded), or
-  #   (b) copy the script's assembly commands into this step, minus the
-  #       final `codesign` line.
-  # -------------------------------------------------------------------------
-  - name: Assemble unsigned .app (no assets, no signing)
-    continue-on-error: true        # a failed codesign must not lose the .app
-    run: |
-      GX_BUNDLE_ID=com.you.generalszh \
-      ./scripts/build/ios/package-ios-zh.sh --dev
-
-  # This is the money step: prints the dylib load paths baked into the
-  # binary, so you know EXACTLY where MoltenVK + the DXVK dylibs must sit
-  # inside the bundle, and whether SDL3/OpenAL/FFmpeg are static (absent).
-  - name: Link-path audit
-    run: |
-      echo "=== candidate binaries ==="
-      find build -type f \( -name z_generals -o -name GeneralsZH \) -print
-      BIN="$(find build -type f -name z_generals | head -1)"
-      echo "=== otool -L $BIN ==="
-      otool -L "$BIN" || true
-      echo "=== .app trees found ==="
-      find build -name "*.app" -maxdepth 4 -print
-
-  - name: Upload artefacts
-    uses: actions/upload-artifact@v4
-    with:
-      name: generalszh-ios-unsigned
-      if-no-files-found: warn
-      path: |
-        build/**/*.app
-        build/ios-vulkan/**/z_generals
-        build/**/*.dylib
-        build/**/MoltenVK.framework/**
+      - name: Configure
+        run: cmake --pre
