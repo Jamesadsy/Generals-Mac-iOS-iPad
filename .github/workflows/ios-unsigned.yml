@@ -34,4 +34,34 @@ jobs:
         run: ./scripts/build/ios/stage-fonts.sh
 
       - name: Configure
-        run: cmake --pre
+        run: cmake --preset ios-vulkan
+
+      - name: Build the engine
+        run: cmake --build build/ios-vulkan --target z_generals
+
+      - name: Assemble unsigned app
+        continue-on-error: true
+        run: |
+          GX_BUNDLE_ID=com.you.generalszh \
+          ./scripts/build/ios/package-ios-zh.sh --dev
+
+      - name: Link-path audit
+        run: |
+          echo "=== candidate binaries ==="
+          find build -type f \( -name z_generals -o -name GeneralsZH \) -print
+          BIN="$(find build -type f -name z_generals | head -1)"
+          echo "=== otool -L $BIN ==="
+          otool -L "$BIN" || true
+          echo "=== .app trees found ==="
+          find build -name "*.app" -maxdepth 4 -print
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: generalszh-ios-unsigned
+          if-no-files-found: warn
+          path: |
+            build/**/*.app
+            build/ios-vulkan/**/z_generals
+            build/**/*.dylib
+            build/**/MoltenVK.framework/**
